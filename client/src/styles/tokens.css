@@ -1,0 +1,59 @@
+/* LaTeXaP-WeB Design Tokens */
+:root {
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-serif: "Charter", "Georgia", "Times New Roman", serif;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* Layout dimensions */
+  --toolbar-height: 52px;
+  --pane-header-height: 36px;
+  --statusbar-height: 28px;
+  --sidebar-min-width: 240px;
+  --sidebar-max-width: 380px;
+  --drawer-min-height: 140px;
+  --drawer-max-height: 420px;
+
+  /* Z-index layers */
+  --z-base: 1;
+  --z-splitter: 10;
+  --z-sticky: 20;
+  --z-drawer: 30;
+  --z-sidebar-overlay: 40;
+  --z-popover: 60;
+  --z-modal: 80;
+  --z-toast: 100;
+  --z-skip-link: 200;
+
+  /* Transitions */
+  --transition-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
+  --transition-normal: 200ms cubic-bezier(0.2, 0, 0, 1);
+
+  /* Focus ring (WCAG 2.1 AA: >= 3:1 contrast, 2px solid + 2px offset) */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0ms;
+    --transition-normal: 0ms;
+  }
+}
