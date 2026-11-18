@@ -173,12 +173,15 @@ export function validateImageMagicBytes(buffer: Buffer, ext: string): void {
       throw new HttpError(400, 'Invalid WEBP file signature', 'INVALID_FILE_MAGIC');
     }
   } else if (ext === 'svg') {
-    const head = buffer.subarray(0, 512).toString('utf8').trim().toLowerCase();
-    if (!head.includes('<svg')) {
+    const fullSvg = buffer.toString('utf8');
+    const lowerSvg = fullSvg.toLowerCase();
+    if (!lowerSvg.includes('<svg')) {
       throw new HttpError(400, 'Invalid SVG file content', 'INVALID_FILE_MAGIC');
     }
-    if (head.includes('<script') || head.includes('javascript:')) {
-      throw new HttpError(400, 'SVG contains disallowed script content', 'UNSAFE_SVG');
+    const unsafeSvgPattern =
+      /<script\b|<\/script\b|\bon[a-z]+\s*=|javascript:|vbscript:|data:text\/html|<foreignobject\b|<iframe\b|<object\b|<embed\b/i;
+    if (unsafeSvgPattern.test(fullSvg)) {
+      throw new HttpError(400, 'SVG contains disallowed active or script content', 'UNSAFE_SVG');
     }
   }
 }
@@ -469,7 +472,8 @@ export class ProjectService {
   async createProject(
     userId: string,
     authorName: string,
-    input: CreateProjectInput
+    input: CreateProjectInput,
+    extraTextFiles?: Record<string, string>
   ): Promise<{ project: AcademicProjectDescriptor; files: Record<string, string> }> {
     const displayName = (input.displayName || '').trim();
     if (!displayName) {
@@ -490,6 +494,13 @@ export class ProjectService {
       'main.tex': input.mainTexContent ?? DEFAULT_MAIN_TEX,
       'references.bib': input.bibContent ?? '',
     };
+    if (extraTextFiles) {
+      for (const [relPath, content] of Object.entries(extraTextFiles)) {
+        if (relPath === 'main.tex' || relPath === 'references.bib') continue;
+        const safePath = validateRelativeProjectPath(relPath, { allowFigures: false, allowText: true });
+        files[safePath] = content;
+      }
+    }
 
     const descriptor: AcademicProjectDescriptor = {
       id: crypto.randomUUID(),
@@ -507,11 +518,10 @@ export class ProjectService {
     };
 
     const prefix = this.projectPrefix(userId, slug);
-    await this.storage.putObject(`${prefix}/main.tex`, files['main.tex'], 'text/plain; charset=utf-8');
-    await this.storage.putObject(
-      `${prefix}/references.bib`,
-      files['references.bib'],
-      'text/plain; charset=utf-8'
+    await Promise.all(
+      Object.entries(files).map(([relPath, content]) =>
+        this.storage.putObject(`${prefix}/${relPath}`, content, 'text/plain; charset=utf-8')
+      )
     );
 
     const snapshot = await this.writeSnapshot(
@@ -520,7 +530,7 @@ export class ProjectService {
       authorName,
       `Create ${descriptor.displayName}`,
       files,
-      Object.keys(files),
+      Object.keys(files).sort(),
       null
     );
     descriptor.lastSnapshotId = snapshot.snapshotId;
@@ -588,23 +598,28 @@ export class ProjectService {
     requestedSlug?: string
   ): Promise<{ project: AcademicProjectDescriptor; files: Record<string, string> }> {
     const source = await this.getProject(userId, sourceSlug);
-    const created = await this.createProject(userId, authorName, {
-      displayName,
-      slug: requestedSlug,
-      templateId: source.project.templateId,
-      mainTexContent: source.files['main.tex'] ?? DEFAULT_MAIN_TEX,
-      bibContent: source.files['references.bib'] ?? '',
-      rubricTargets: source.project.rubricTargets,
-    });
-
-    // Copy extra text files & binary figures
-    const targetPrefix = this.projectPrefix(userId, created.project.slug);
+    const extraFiles: Record<string, string> = {};
     for (const [relPath, content] of Object.entries(source.files)) {
-      if (relPath === 'main.tex' || relPath === 'references.bib') continue;
-      await this.storage.putObject(`${targetPrefix}/${relPath}`, content, 'text/plain; charset=utf-8');
-      created.files[relPath] = content;
+      if (relPath !== 'main.tex' && relPath !== 'references.bib') {
+        extraFiles[relPath] = content;
+      }
     }
 
+    const created = await this.createProject(
+      userId,
+      authorName,
+      {
+        displayName,
+        slug: requestedSlug,
+        templateId: source.project.templateId,
+        mainTexContent: source.files['main.tex'] ?? DEFAULT_MAIN_TEX,
+        bibContent: source.files['references.bib'] ?? '',
+        rubricTargets: source.project.rubricTargets,
+      },
+      extraFiles
+    );
+
+    const targetPrefix = this.projectPrefix(userId, created.project.slug);
     for (const asset of source.binaryAssets) {
       const obj = await this.storage.getObject(`${this.projectPrefix(userId, sourceSlug)}/${asset.relativePath}`);
       if (obj) {

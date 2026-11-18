@@ -161,4 +161,38 @@ describe('Google & Dev Auth + Multi-User Tenant Isolation', () => {
     expect(validRes.body.user.userId).toBe('google_1082930011223344');
     expect(validRes.body.user.authMode).toBe('google');
   });
+
+  it('fails closed for dev-login in production even when GOOGLE_CLIENT_ID is unset', async () => {
+    const storage = await makeTempStorage();
+    const prevEnv = {
+      NODE_ENV: process.env.NODE_ENV,
+      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+      ALLOW_DEV_AUTH: process.env.ALLOW_DEV_AUTH,
+      JWT_SECRET: process.env.JWT_SECRET,
+    };
+
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.GOOGLE_CLIENT_ID;
+      delete process.env.ALLOW_DEV_AUTH;
+      process.env.JWT_SECRET = 'prod-jwt-secret-key-at-least-32-bytes-long';
+
+      const prodNoGoogleConfig = loadConfig();
+      expect(prodNoGoogleConfig.devAuthEnabled).toBe(false);
+
+      const { app } = createApp({ config: prodNoGoogleConfig, storageProvider: storage });
+      const res = await request(app)
+        .post('/api/auth/dev-login')
+        .send({ email: 'ada@latexap.dev' });
+      expect(res.status).toBe(403);
+    } finally {
+      process.env.NODE_ENV = prevEnv.NODE_ENV;
+      if (prevEnv.GOOGLE_CLIENT_ID) process.env.GOOGLE_CLIENT_ID = prevEnv.GOOGLE_CLIENT_ID;
+      else delete process.env.GOOGLE_CLIENT_ID;
+      if (prevEnv.ALLOW_DEV_AUTH) process.env.ALLOW_DEV_AUTH = prevEnv.ALLOW_DEV_AUTH;
+      else delete process.env.ALLOW_DEV_AUTH;
+      if (prevEnv.JWT_SECRET) process.env.JWT_SECRET = prevEnv.JWT_SECRET;
+      else delete process.env.JWT_SECRET;
+    }
+  });
 });

@@ -50,11 +50,9 @@ export function loadConfig(): ServerConfig {
   const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() || null;
   const allowDevAuthEnv = process.env.ALLOW_DEV_AUTH?.trim().toLowerCase();
 
-  // Production guard: if GOOGLE_CLIENT_ID is set in production and ALLOW_DEV_AUTH !== 'true', disable dev-login
+  // Production guard: fail closed in production unless ALLOW_DEV_AUTH is explicitly 'true'
   const devAuthEnabled = isProduction
-    ? googleClientId
-      ? allowDevAuthEnv === 'true'
-      : allowDevAuthEnv !== 'false'
+    ? allowDevAuthEnv === 'true'
     : allowDevAuthEnv !== 'false';
 
   const b2Endpoint = process.env.B2_ENDPOINT?.trim() || null;

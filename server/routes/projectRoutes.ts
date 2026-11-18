@@ -136,6 +136,10 @@ export function createProjectRouter(projectService: ProjectService): Router {
       const asset = await projectService.getAsset(user.userId, slug, relPath);
       res.setHeader('Content-Type', asset.contentType);
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+      );
       res.send(asset.body);
     } catch (err) {
       next(err);

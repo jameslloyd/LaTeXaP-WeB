@@ -251,6 +251,26 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     return nonceRef.current;
   };
 
+  const surfaceSessionExpiryIf401 = useCallback((err: unknown) => {
+    if (err instanceof ApiHttpError && err.status === 401) {
+      setAuthError(
+        'Your Google session expired. Typing & local preview continue working. Sign in again to resume Backblaze B2 sync.'
+      );
+    }
+  }, []);
+
+  const withAuthGuard = useCallback(
+    async <T,>(fn: () => Promise<T>): Promise<T> => {
+      try {
+        return await fn();
+      } catch (err) {
+        surfaceSessionExpiryIf401(err);
+        throw err;
+      }
+    },
+    [surfaceSessionExpiryIf401]
+  );
+
   // Derived academic & diagnostic models
   const bibEntries = useMemo(() => parseBibTeX(managedBibContent), [managedBibContent]);
   const outlineItems = useMemo(() => parseDocumentOutline(mainTexContent), [mainTexContent]);
@@ -475,13 +495,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const loadSnapshots = useCallback(async () => {
     if (!activeProject) return;
-    const res = await apiClient.listSnapshots(activeProject.slug);
+    const res = await withAuthGuard(() => apiClient.listSnapshots(activeProject.slug));
     setSnapshots(res.snapshots);
-  }, [activeProject]);
+  }, [activeProject, withAuthGuard]);
 
   const switchProject = useCallback(
     async (slug: string) => {
-      const res = await apiClient.getProject(slug);
+      const res = await withAuthGuard(() => apiClient.getProject(slug));
       binaryCacheRef.current = {};
       setActiveProject(res.project);
       setProjectFiles(res.files);
@@ -492,17 +512,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setConflictInfo(null);
       setSyncState(storageStatus?.storageDriver === 'local' ? 'offline-fallback' : 'saved');
       const [snapRes] = await Promise.all([
-        apiClient.listSnapshots(slug),
+        withAuthGuard(() => apiClient.listSnapshots(slug)),
         hydrateBinaryAssetBytes(res.binaryAssets),
       ]);
       setSnapshots(snapRes.snapshots);
     },
-    [hydrateBinaryAssetBytes, storageStatus?.storageDriver]
+    [hydrateBinaryAssetBytes, storageStatus?.storageDriver, withAuthGuard]
   );
 
   const loadProjects = useCallback(async () => {
     const [listRes, statusRes, fontsRes] = await Promise.all([
-      apiClient.listProjects(),
+      withAuthGuard(() => apiClient.listProjects()),
       apiClient.getStorageStatus().catch(() => null),
       apiClient.listFonts().catch(() => ({ fonts: [] as CustomFontRecord[] })),
     ]);
@@ -523,11 +543,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
           : listRes.projects[0].slug;
       await switchProject(targetSlug);
     } else {
-      const created = await apiClient.createProject({
-        displayName: 'LaTeX3 Showcase Paper',
-        templateId: 'expl3-showcase',
-        mainTexContent: DEFAULT_SAMPLE_TEX,
-      });
+      const created = await withAuthGuard(() =>
+        apiClient.createProject({
+          displayName: 'LaTeX3 Showcase Paper',
+          templateId: 'expl3-showcase',
+          mainTexContent: DEFAULT_SAMPLE_TEX,
+        })
+      );
       setProjects([created.project]);
       setActiveProject(created.project);
       setProjectFiles(created.files);
@@ -535,13 +557,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setSnapshots([]);
       setIsDirty(false);
     }
-  }, [hydrateCustomFontBytes, switchProject]);
+  }, [hydrateCustomFontBytes, switchProject, withAuthGuard]);
 
   const testStorageConnection = useCallback(async (): Promise<StorageStatusInfo> => {
-    const status = await apiClient.getStorageStatus();
+    const status = await withAuthGuard(() => apiClient.getStorageStatus());
     setStorageStatus(status);
     return status;
-  }, []);
+  }, [withAuthGuard]);
 
   const loginWithGoogleToken = useCallback(
     async (idToken: string) => {
@@ -599,11 +621,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     const tmpl = input.templateId
       ? LATEX_TEMPLATES.find((t) => t.id === input.templateId)
       : undefined;
-    const res = await apiClient.createProject({
-      ...input,
-      mainTexContent: input.mainTexContent ?? tmpl?.source ?? DEFAULT_SAMPLE_TEX,
-      bibContent: input.bibContent ?? tmpl?.defaultBib ?? '',
-    });
+    const res = await withAuthGuard(() =>
+      apiClient.createProject({
+        ...input,
+        mainTexContent: input.mainTexContent ?? tmpl?.source ?? DEFAULT_SAMPLE_TEX,
+        bibContent: input.bibContent ?? tmpl?.defaultBib ?? '',
+      })
+    );
     binaryCacheRef.current = {};
     setProjects((prev) => [res.project, ...prev]);
     setActiveProject(res.project);
@@ -613,39 +637,43 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     setRubricTargets(res.project.rubricTargets ?? DEFAULT_RUBRIC);
     setIsDirty(false);
     setConflictInfo(null);
-    const snapRes = await apiClient.listSnapshots(res.project.slug);
+    const snapRes = await withAuthGuard(() => apiClient.listSnapshots(res.project.slug));
     setSnapshots(snapRes.snapshots);
-  }, []);
+  }, [withAuthGuard]);
 
   const renameProject = useCallback(async (slug: string, displayName: string) => {
-    const res = await apiClient.renameProject(slug, { displayName });
+    const res = await withAuthGuard(() => apiClient.renameProject(slug, { displayName }));
     setProjects((prev) => prev.map((p) => (p.slug === slug ? res.project : p)));
     setActiveProject((prev) => (prev?.slug === slug ? res.project : prev));
-  }, []);
+  }, [withAuthGuard]);
 
-  const duplicateProject = useCallback(async (slug: string, displayName: string) => {
-    const res = await apiClient.duplicateProject(slug, { displayName });
-    setProjects((prev) => [res.project, ...prev]);
-    setActiveProject(res.project);
-    setProjectFiles(res.files);
-    setIsDirty(false);
-  }, []);
+  const duplicateProject = useCallback(
+    async (slug: string, displayName: string) => {
+      const res = await withAuthGuard(() => apiClient.duplicateProject(slug, { displayName }));
+      setProjects((prev) => [res.project, ...prev]);
+      await switchProject(res.project.slug);
+    },
+    [switchProject, withAuthGuard]
+  );
 
   const deleteProject = useCallback(
     async (slug: string) => {
-      await apiClient.deleteProject(slug);
+      await withAuthGuard(() => apiClient.deleteProject(slug));
       const remaining = projects.filter((p) => p.slug !== slug);
       setProjects(remaining);
       if (activeProject?.slug === slug) {
         if (remaining.length > 0) {
           await switchProject(remaining[0].slug);
         } else {
+          binaryCacheRef.current = {};
           setActiveProject(null);
+          setBinaryAssets([]);
+          setSnapshots([]);
           setProjectFiles({ 'main.tex': DEFAULT_SAMPLE_TEX, 'references.bib': '' });
         }
       }
     },
-    [activeProject, projects, switchProject]
+    [activeProject, projects, switchProject, withAuthGuard]
   );
 
   const saveProject = useCallback(
@@ -707,15 +735,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         setProjectFiles(nextFiles);
       }
 
-      const res = await apiClient.saveProject(activeProject.slug, {
-        files: nextFiles,
-        expectedVersion: conflictInfo.serverVersion,
-        forceOverwrite: true,
-        message:
-          choice === 'keep-both'
-            ? 'Resolve sync conflict (keep both)'
-            : 'Resolve sync conflict (keep local)',
-      });
+      const res = await withAuthGuard(() =>
+        apiClient.saveProject(activeProject.slug, {
+          files: nextFiles,
+          expectedVersion: conflictInfo.serverVersion,
+          forceOverwrite: true,
+          message:
+            choice === 'keep-both'
+              ? 'Resolve sync conflict (keep both)'
+              : 'Resolve sync conflict (keep local)',
+        })
+      );
       setActiveProject(res.project);
       setProjects((prev) => prev.map((p) => (p.slug === res.project.slug ? res.project : p)));
       setIsDirty(false);
@@ -725,7 +755,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
         setSnapshots((prev) => [res.snapshot!, ...prev]);
       }
     },
-    [activeProject, conflictInfo, projectFiles, storageStatus?.storageDriver]
+    [activeProject, conflictInfo, projectFiles, storageStatus?.storageDriver, withAuthGuard]
   );
 
   const previewSnapshot = useCallback(
@@ -733,15 +763,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       if (!activeProject) {
         throw new Error('No active project');
       }
-      return apiClient.getSnapshotDetail(activeProject.slug, snapshotId);
+      return withAuthGuard(() => apiClient.getSnapshotDetail(activeProject.slug, snapshotId));
     },
-    [activeProject]
+    [activeProject, withAuthGuard]
   );
 
   const restoreSnapshot = useCallback(
     async (snapshotId: string) => {
       if (!activeProject) return;
-      const res = await apiClient.restoreSnapshot(activeProject.slug, snapshotId);
+      const res = await withAuthGuard(() =>
+        apiClient.restoreSnapshot(activeProject.slug, snapshotId)
+      );
       setActiveProject(res.project);
       setProjects((prev) => prev.map((p) => (p.slug === res.project.slug ? res.project : p)));
       setProjectFiles(res.files);
@@ -749,7 +781,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setIsDirty(false);
       setConflictInfo(null);
     },
-    [activeProject]
+    [activeProject, withAuthGuard]
   );
 
   const triggerForwardSync = useCallback(
@@ -861,12 +893,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     async (targets: RubricTargetConfig) => {
       setRubricTargets(targets);
       if (activeProject) {
-        const res = await apiClient.updateRubricTargets(activeProject.slug, targets);
+        const res = await withAuthGuard(() =>
+          apiClient.updateRubricTargets(activeProject.slug, targets)
+        );
         setActiveProject(res.project);
         setProjects((prev) => prev.map((p) => (p.slug === res.project.slug ? res.project : p)));
       }
     },
-    [activeProject]
+    [activeProject, withAuthGuard]
   );
 
   const applyPaperSetupWizard = useCallback(
@@ -975,14 +1009,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
     async (primaryFile: File, secondaryFile: File | null, config: FigureInsertConfig) => {
       if (!activeProject) return;
       insertPackage('graphicx');
-      const primary = await apiClient.uploadProjectAsset(activeProject.slug, primaryFile, 'figures');
+      const primary = await withAuthGuard(() =>
+        apiClient.uploadProjectAsset(activeProject.slug, primaryFile, 'figures')
+      );
       const primaryBytes = new Uint8Array(await primaryFile.arrayBuffer());
       binaryCacheRef.current[primary.relativePath] = primaryBytes;
 
       let secondaryPath: string | null = null;
       if (secondaryFile) {
         insertPackage('subcaption');
-        const sec = await apiClient.uploadProjectAsset(activeProject.slug, secondaryFile, 'figures');
+        const sec = await withAuthGuard(() =>
+          apiClient.uploadProjectAsset(activeProject.slug, secondaryFile, 'figures')
+        );
         binaryCacheRef.current[sec.relativePath] = new Uint8Array(await secondaryFile.arrayBuffer());
         secondaryPath = sec.relativePath;
       }
@@ -1086,7 +1124,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
 
   const uploadCustomFont = useCallback(
     async (file: File, displayName?: string) => {
-      const res = await apiClient.uploadFont(file, displayName);
+      const res = await withAuthGuard(() => apiClient.uploadFont(file, displayName));
       const bytes = new Uint8Array(await file.arrayBuffer());
       fontCacheRef.current[res.font.id] = bytes;
       if (typeof FontFace !== 'undefined' && typeof document !== 'undefined') {
@@ -1101,31 +1139,41 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }): 
       setCustomFonts((prev) => [res.font, ...prev]);
       return res.font;
     },
-    []
+    [withAuthGuard]
   );
 
-  const renameCustomFont = useCallback(async (fontId: string, displayName: string) => {
-    const res = await apiClient.renameFont(fontId, { displayName });
-    setCustomFonts((prev) => prev.map((f) => (f.id === fontId ? res.font : f)));
-  }, []);
+  const renameCustomFont = useCallback(
+    async (fontId: string, displayName: string) => {
+      const res = await withAuthGuard(() => apiClient.renameFont(fontId, { displayName }));
+      setCustomFonts((prev) => prev.map((f) => (f.id === fontId ? res.font : f)));
+    },
+    [withAuthGuard]
+  );
 
-  const deleteCustomFont = useCallback(async (fontId: string) => {
-    await apiClient.deleteFont(fontId);
-    delete fontCacheRef.current[fontId];
-    setCustomFonts((prev) => prev.filter((f) => f.id !== fontId));
-  }, []);
+  const deleteCustomFont = useCallback(
+    async (fontId: string) => {
+      await withAuthGuard(() => apiClient.deleteFont(fontId));
+      delete fontCacheRef.current[fontId];
+      setCustomFonts((prev) => prev.filter((f) => f.id !== fontId));
+    },
+    [withAuthGuard]
+  );
 
   const applyFontToDocument = useCallback(
     (fontNameOrFile: string, role: LaTeXFontRole, customCommandName?: string) => {
       insertPackage('fontspec');
+      const safeFont = (fontNameOrFile || '')
+        .replace(/[\r\n\0\\{}"<>]/g, '')
+        .trim() || 'Latin Modern Roman';
+      const safeCmdName = (customCommandName || '').replace(/[^a-zA-Z]/g, '') || 'customfont';
       const cmd =
         role === 'main'
-          ? `\\setmainfont{${fontNameOrFile}}`
+          ? `\\setmainfont{${safeFont}}`
           : role === 'sans'
-            ? `\\setsansfont{${fontNameOrFile}}`
+            ? `\\setsansfont{${safeFont}}`
             : role === 'mono'
-              ? `\\setmonofont{${fontNameOrFile}}`
-              : `\\newfontfamily\\${customCommandName || 'customfont'}{${fontNameOrFile}}`;
+              ? `\\setmonofont{${safeFont}}`
+              : `\\newfontfamily\\${safeCmdName}{${safeFont}}`;
       insertTextAtCaret(`${cmd}\n`, 0);
     },
     [insertPackage, insertTextAtCaret]

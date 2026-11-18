@@ -5,6 +5,7 @@ import type {
   LaTeXTemplate,
   PaperSetupConfig,
 } from '@shared/types/index.js';
+import { AcademicSanitizer } from './academicToolsGenerator.js';
 
 export const LATEX_TEMPLATES: LaTeXTemplate[] = [
   {
@@ -546,8 +547,12 @@ export function generatePaperSetupDocument(config: PaperSetupConfig): string {
   const twoCol = config.templateId === 'ieee-conference' ? ',twocolumn' : '';
   const authorLine = config.anonymizedBlindReview
     ? 'Anonymous Author(s) \\\\ Blind Review Submission'
-    : [config.author || 'Author Name', config.institution, config.courseOrVenue]
-        .filter((s) => s && s.trim().length > 0)
+    : [
+        AcademicSanitizer.escapeLaTeXText(config.author || 'Author Name'),
+        config.institution ? AcademicSanitizer.escapeLaTeXText(config.institution) : '',
+        config.courseOrVenue ? AcademicSanitizer.escapeLaTeXText(config.courseOrVenue) : '',
+      ]
+        .filter((s) => s.length > 0)
         .join(' \\\\ ');
 
   const extraPackages: string[] = ['amsmath', 'amssymb', 'booktabs', 'graphicx', 'hyperref'];
@@ -567,7 +572,9 @@ export function generatePaperSetupDocument(config: PaperSetupConfig): string {
           ? 'numeric'
           : config.bibliographyStyle;
 
-  const title = (config.title || baseTemplate.title).trim();
+  const title = AcademicSanitizer.escapeLaTeXText((config.title || baseTemplate.title).trim(), true);
+  const rawDate = config.date?.trim();
+  const safeDate = !rawDate || rawDate === '\\today' ? '\\today' : AcademicSanitizer.escapeLaTeXText(rawDate);
 
   return `\\documentclass[${fontPt}pt,${paperOpt}${twoCol}]{${docClass}}
 \\usepackage{expl3,xparse}
@@ -576,7 +583,7 @@ export function generatePaperSetupDocument(config: PaperSetupConfig): string {
 ${spacingLine}${linenoLine}
 \\title{${title}}
 \\author{${authorLine}}
-\\date{${config.date?.trim() || '\\today'}}
+\\date{${safeDate}}
 
 \\begin{document}
 \\maketitle

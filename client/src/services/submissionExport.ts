@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from 'fflate';
 import type { AcademicPreflightReport, SubmissionExportResult } from '@shared/types/academic.js';
+import { AcademicSanitizer } from './academicToolsGenerator.js';
 
 export interface SubmissionExportInput {
   projectSlug: string;
@@ -39,32 +40,39 @@ function anonymizeTexSource(source: string): string {
 }
 
 export function buildSubmissionZipBundle(input: SubmissionExportInput): SubmissionExportResult {
+  const safeSlug = AcademicSanitizer.sanitizeIdentifier(input.projectSlug || 'document', 'document');
   const entries: Record<string, Uint8Array> = {};
   const includedFiles: string[] = [];
 
   for (const [relPath, rawContent] of Object.entries(input.projectFiles)) {
+    const safePath = AcademicSanitizer.validatedRelativeAssetPath(relPath);
+    if (!safePath) continue;
     let text = rawContent;
-    if (relPath.endsWith('.tex')) {
+    if (safePath.endsWith('.tex')) {
       if (input.stripComments) text = stripTexComments(text);
       if (input.anonymize) text = anonymizeTexSource(text);
     }
-    entries[relPath] = strToU8(text);
-    includedFiles.push(relPath);
+    entries[safePath] = strToU8(text);
+    includedFiles.push(safePath);
   }
 
   for (const [relPath, bytes] of Object.entries(input.binaryAssets)) {
-    entries[relPath] = bytes;
-    includedFiles.push(relPath);
+    const safePath = AcademicSanitizer.validatedRelativeAssetPath(relPath, ['figures']);
+    if (!safePath) continue;
+    entries[safePath] = bytes;
+    includedFiles.push(safePath);
   }
 
   for (const font of input.customFonts ?? []) {
-    const fontPath = `fonts/${font.fileName}`;
+    const safeFontName = (font.fileName || '').split(/[\\/]/).pop()?.replace(/[^a-zA-Z0-9._-]/g, '-') || 'font.ttf';
+    const fontPath = AcademicSanitizer.validatedRelativeAssetPath(`fonts/${safeFontName}`, ['fonts']);
+    if (!fontPath) continue;
     entries[fontPath] = font.bytes;
     includedFiles.push(fontPath);
   }
 
   if (input.pdfBytes && input.pdfBytes.byteLength > 0) {
-    const pdfName = `${input.projectSlug || 'document'}.pdf`;
+    const pdfName = `${safeSlug}.pdf`;
     entries[pdfName] = input.pdfBytes;
     includedFiles.push(pdfName);
   }
@@ -77,7 +85,7 @@ export function buildSubmissionZipBundle(input: SubmissionExportInput): Submissi
     .map((i) => i.title);
 
   return {
-    fileName: `${input.projectSlug || 'document'}-submission.zip`,
+    fileName: `${safeSlug}-submission.zip`,
     blob,
     includedFiles: includedFiles.sort(),
     preflightWarnings,

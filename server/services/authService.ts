@@ -82,11 +82,15 @@ export class AuthService {
     }
 
     const sanitizedSub = claims.sub.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safePicture =
+      typeof claims.picture === 'string' && claims.picture.startsWith('https://')
+        ? claims.picture
+        : undefined;
     return {
       userId: `google_${sanitizedSub}`,
       email: claims.email,
       name: claims.name?.trim() || claims.email.split('@')[0] || 'Google User',
-      picture: claims.picture,
+      picture: safePicture,
       authMode: 'google',
     };
   }
@@ -139,14 +143,18 @@ export class AuthService {
       const email = typeof payload.email === 'string' ? payload.email : null;
       const name = typeof payload.name === 'string' ? payload.name : null;
       const authMode = payload.authMode === 'google' || payload.authMode === 'dev' ? payload.authMode : null;
-      if (!userId || !email || !name || !authMode) {
+      if (!userId || !/^(google|dev)_[a-zA-Z0-9_-]+$/.test(userId) || !email || !name || !authMode) {
         return null;
       }
+      const safePicture =
+        typeof payload.picture === 'string' && payload.picture.startsWith('https://')
+          ? payload.picture
+          : undefined;
       return {
         userId,
         email,
         name,
-        picture: typeof payload.picture === 'string' ? payload.picture : undefined,
+        picture: safePicture,
         authMode,
       };
     } catch {

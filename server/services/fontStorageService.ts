@@ -152,6 +152,14 @@ function parseSfntMetadata(buffer: Buffer, fallbackStem: string): {
   }
 }
 
+function sanitizeFontMetadata(raw: string, fallback: string): string {
+  const cleaned = (raw || '')
+    .replace(/[\r\n\0\\{}"<>]/g, '')
+    .trim()
+    .slice(0, 100);
+  return cleaned || fallback;
+}
+
 export class FontStorageService {
   private readonly storage: StorageProvider;
 
@@ -201,8 +209,8 @@ export class FontStorageService {
     const id = crypto.randomUUID();
     const record: CustomFontRecord = {
       id,
-      displayName: (overrides?.displayName || parsed.familyName || stem).trim().slice(0, 100),
-      familyName: (overrides?.familyName || parsed.familyName || stem).trim().slice(0, 100),
+      displayName: sanitizeFontMetadata(overrides?.displayName || parsed.familyName || stem, stem),
+      familyName: sanitizeFontMetadata(overrides?.familyName || parsed.familyName || stem, stem),
       postScriptName: parsed.postScriptName,
       styleName: parsed.styleName,
       fileName,
@@ -224,7 +232,7 @@ export class FontStorageService {
   }
 
   async renameFont(userId: string, fontId: string, displayName: string): Promise<CustomFontRecord> {
-    const clean = (displayName || '').trim();
+    const clean = sanitizeFontMetadata(displayName, '');
     if (!clean) {
       throw new HttpError(400, 'Font display name is required', 'INVALID_DISPLAY_NAME');
     }
@@ -233,7 +241,7 @@ export class FontStorageService {
     if (!font) {
       throw new HttpError(404, 'Font not found', 'FONT_NOT_FOUND');
     }
-    font.displayName = clean.slice(0, 100);
+    font.displayName = clean;
     await this.writeManifest(userId, manifest);
     return font;
   }

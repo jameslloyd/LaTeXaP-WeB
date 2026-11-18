@@ -46,8 +46,8 @@ export function createSyncTeXData(
       for (const box of pageBoxes) {
         const minX = box.xPt;
         const maxX = box.xPt + Math.max(box.widthPt, 8);
-        const minY = box.yTopPt - Math.max(box.heightPt, 10);
-        const maxY = box.yTopPt + Math.max(box.depthPt ?? 4, 4);
+        const minY = box.yTopPt;
+        const maxY = box.yTopPt + Math.max(box.heightPt, 10) + Math.max(box.depthPt ?? 4, 4);
 
         const dx = xPt < minX ? minX - xPt : xPt > maxX ? xPt - maxX : 0;
         const dy = yTopPt < minY ? minY - yTopPt : yTopPt > maxY ? yTopPt - maxY : 0;

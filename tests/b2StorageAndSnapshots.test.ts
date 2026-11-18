@@ -151,6 +151,33 @@ describe('Backblaze B2 Local Fallback, Snapshots, Conflicts, Assets & Fonts', ()
     const downloadPng = await agent.get('/api/projects/cs229-final/assets/figures/plot.png');
     expect(downloadPng.status).toBe(200);
     expect(Buffer.from(downloadPng.body).equals(VALID_PNG)).toBe(true);
+    expect(downloadPng.headers['content-security-policy']).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    );
+
+    // SVG full-buffer XSS filter regression checks (payload padded > 512 bytes)
+    const paddedScriptSvg = `<svg xmlns="http://www.w3.org/2000/svg">${'<!--pad-->'.repeat(70)}<script>alert(1)</script></svg>`;
+    const badSvg1 = await agent
+      .post('/api/projects/cs229-final/assets')
+      .attach('file', Buffer.from(paddedScriptSvg), 'xss1.svg');
+    expect(badSvg1.status).toBe(400);
+
+    const paddedOnloadSvg = `<svg xmlns="http://www.w3.org/2000/svg">${' '.repeat(600)}<rect onload="alert(1)"/></svg>`;
+    const badSvg2 = await agent
+      .post('/api/projects/cs229-final/assets')
+      .attach('file', Buffer.from(paddedOnloadSvg), 'xss2.svg');
+    expect(badSvg2.status).toBe(400);
+
+    const safeSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><circle cx="5" cy="5" r="4"/></svg>';
+    const goodSvg = await agent
+      .post('/api/projects/cs229-final/assets')
+      .attach('file', Buffer.from(safeSvg), 'diagram.svg');
+    expect(goodSvg.status).toBe(201);
+    const downloadSvg = await agent.get('/api/projects/cs229-final/assets/figures/diagram.svg');
+    expect(downloadSvg.status).toBe(200);
+    expect(downloadSvg.headers['content-security-policy']).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    );
 
     // Custom font upload + rejection of unsupported format
     const badFont = await agent

@@ -108,10 +108,50 @@ We cite Knuth \\cite{knuth1984} and show an equation:
     const backwardHit = synctex.backwardSearch(
       forwardBox!.page,
       forwardBox!.xPt + 2,
-      forwardBox!.yTopPt
+      forwardBox!.yTopPt + 4
     );
     expect(backwardHit).not.toBeNull();
     expect(backwardHit!.line).toBe(introLine);
+
+    // Backward SyncTeX inside figure & chart body (yTopPt is standardized as top-of-box)
+    const figLine = tex.split('\n').findIndex((l) => l.includes('\\begin{figure}')) + 1;
+    const figBox = synctex.forwardSearch(figLine);
+    expect(figBox).not.toBeNull();
+    const figHit = synctex.backwardSearch(
+      figBox!.page,
+      figBox!.xPt + 20,
+      figBox!.yTopPt + figBox!.heightPt * 0.5
+    );
+    expect(figHit).not.toBeNull();
+    expect(figHit!.line).toBe(figLine);
+  });
+
+  it('expands nested-brace xparse commands and expl3 seq_map_inline without truncating', async () => {
+    const tex = `\\documentclass{article}
+\\usepackage{expl3,xparse}
+\\ExplSyntaxOn
+\\NewDocumentCommand{\\Highlight}{m}{\\textbf{Key:~#1}}
+\\seq_new:N \\l_demo_seq
+\\seq_set_from_clist:Nn \\l_demo_seq { Alpha, Beta }
+\\ExplSyntaxOff
+\\begin{document}
+\\section{Macros}
+\\Highlight{Nested}
+\\ExplSyntaxOn
+\\seq_map_inline:Nn \\l_demo_seq { \\textbf{#1} }
+\\ExplSyntaxOff
+\\end{document}
+`;
+    const out = await compileWithWebTypesetter({
+      mainTex: tex,
+      bibContent: '',
+      files: { 'main.tex': tex },
+      binaryAssets: {},
+      customFonts: [],
+    });
+    expect(out.diagnostics.filter((d) => d.severity === 'Error')).toHaveLength(0);
+    expect(out.pdfBytes).not.toBeNull();
+    expect(out.pageCount).toBe(1);
   });
 
   it('compiles every built-in template cleanly with zero errors', async () => {

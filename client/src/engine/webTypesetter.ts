@@ -445,31 +445,136 @@ function expandExpl3AndXparse(text: string): string {
     return '';
   });
 
-  // 2. Parse \NewDocumentCommand / \DeclareDocumentCommand / \newcommand
-  out = out.replace(
-    /\\(?:NewDocumentCommand|DeclareDocumentCommand|ProvideDocumentCommand)\s*\{(\\[a-zA-Z0-9_@]+)\}\s*\{([^}]*)\}\s*\{([\s\S]*?)\}(?=\s*(?:\n|\\|$))/g,
-    (_m, name: string, spec: string, body: string) => {
-      const argCount = (spec.match(/[mMoOvV]/g) || []).length;
-      customMacros.set(name, { argCount, body });
-      return '';
+  // 2. Parse \NewDocumentCommand / \DeclareDocumentCommand / \ProvideDocumentCommand & \newcommand with balanced braces
+  const consumeBalancedCommandDefs = (input: string): string => {
+    let cursor = 0;
+    let rebuilt = '';
+    const xparseRe = /\\(?:NewDocumentCommand|DeclareDocumentCommand|ProvideDocumentCommand)\b/g;
+    while (cursor < input.length) {
+      xparseRe.lastIndex = cursor;
+      const m = xparseRe.exec(input);
+      if (!m) {
+        rebuilt += input.slice(cursor);
+        break;
+      }
+      rebuilt += input.slice(cursor, m.index);
+      let p = m.index + m[0].length;
+      while (p < input.length && /\s/.test(input[p])) p += 1;
+      const nameArg = extractBalancedArg(input, p);
+      if (!nameArg) {
+        rebuilt += m[0];
+        cursor = m.index + m[0].length;
+        continue;
+      }
+      p = nameArg.endIdx + 1;
+      while (p < input.length && /\s/.test(input[p])) p += 1;
+      const specArg = extractBalancedArg(input, p);
+      if (!specArg) {
+        rebuilt += m[0];
+        cursor = m.index + m[0].length;
+        continue;
+      }
+      p = specArg.endIdx + 1;
+      while (p < input.length && /\s/.test(input[p])) p += 1;
+      const bodyArg = extractBalancedArg(input, p);
+      if (!bodyArg) {
+        rebuilt += m[0];
+        cursor = m.index + m[0].length;
+        continue;
+      }
+      const cmdName = nameArg.content.trim();
+      const argCount = (specArg.content.match(/[mMoOvV]/g) || []).length;
+      customMacros.set(cmdName, { argCount, body: bodyArg.content });
+      cursor = bodyArg.endIdx + 1;
     }
-  );
-  out = out.replace(
-    /\\(?:newcommand|renewcommand)\*?\s*\{(\\[a-zA-Z0-9_@]+)\}(?:\[(\d+)\])?\s*\{([\s\S]*?)\}(?=\s*(?:\n|\\|$))/g,
-    (_m, name: string, nStr: string | undefined, body: string) => {
-      customMacros.set(name, { argCount: nStr ? Number.parseInt(nStr, 10) : 0, body });
-      return '';
-    }
-  );
+    return rebuilt;
+  };
 
-  // 3. Expand \seq_map_inline:Nn & \clist_map_inline:Nn
-  out = out.replace(
-    /\\(?:seq|clist)_map_inline:Nn\s+(\\[a-zA-Z0-9_]+)\s*\{([\s\S]*?)\}/g,
-    (_m, varName: string, tmpl: string) => {
-      const items = seqVars.get(varName) ?? [];
-      return items.map((item) => tmpl.replace(/#1/g, item).replace(/~/g, ' ')).join(' ');
+  const consumeBalancedNewcommandDefs = (input: string): string => {
+    let cursor = 0;
+    let rebuilt = '';
+    const cmdRe = /\\(?:newcommand|renewcommand)\*?/g;
+    while (cursor < input.length) {
+      cmdRe.lastIndex = cursor;
+      const m = cmdRe.exec(input);
+      if (!m) {
+        rebuilt += input.slice(cursor);
+        break;
+      }
+      rebuilt += input.slice(cursor, m.index);
+      let p = m.index + m[0].length;
+      while (p < input.length && /\s/.test(input[p])) p += 1;
+      const nameArg = extractBalancedArg(input, p);
+      if (!nameArg) {
+        rebuilt += m[0];
+        cursor = m.index + m[0].length;
+        continue;
+      }
+      p = nameArg.endIdx + 1;
+      while (p < input.length && /\s/.test(input[p])) p += 1;
+      let argCount = 0;
+      if (input[p] === '[') {
+        const closeBracket = input.indexOf(']', p);
+        if (closeBracket !== -1) {
+          argCount = Number.parseInt(input.slice(p + 1, closeBracket), 10) || 0;
+          p = closeBracket + 1;
+          while (p < input.length && /\s/.test(input[p])) p += 1;
+        }
+      }
+      // Optional default arg [...]
+      if (input[p] === '[') {
+        const closeDefault = input.indexOf(']', p);
+        if (closeDefault !== -1) {
+          p = closeDefault + 1;
+          while (p < input.length && /\s/.test(input[p])) p += 1;
+        }
+      }
+      const bodyArg = extractBalancedArg(input, p);
+      if (!bodyArg) {
+        rebuilt += m[0];
+        cursor = m.index + m[0].length;
+        continue;
+      }
+      customMacros.set(nameArg.content.trim(), { argCount, body: bodyArg.content });
+      cursor = bodyArg.endIdx + 1;
     }
-  );
+    return rebuilt;
+  };
+
+  out = consumeBalancedCommandDefs(out);
+  out = consumeBalancedNewcommandDefs(out);
+
+  // 3. Expand \seq_map_inline:Nn & \clist_map_inline:Nn with balanced braces
+  const expandBalancedSeqMap = (input: string): string => {
+    let cursor = 0;
+    let rebuilt = '';
+    const mapRe = /\\(?:seq|clist)_map_inline:Nn\s+(\\[a-zA-Z0-9_]+)/g;
+    while (cursor < input.length) {
+      mapRe.lastIndex = cursor;
+      const m = mapRe.exec(input);
+      if (!m) {
+        rebuilt += input.slice(cursor);
+        break;
+      }
+      rebuilt += input.slice(cursor, m.index);
+      let p = m.index + m[0].length;
+      while (p < input.length && /\s/.test(input[p])) p += 1;
+      const bodyArg = extractBalancedArg(input, p);
+      if (!bodyArg) {
+        rebuilt += m[0];
+        cursor = m.index + m[0].length;
+        continue;
+      }
+      const items = seqVars.get(m[1]) ?? [];
+      rebuilt += items
+        .map((item) => bodyArg.content.replace(/#1/g, item).replace(/~/g, ' '))
+        .join(' ');
+      cursor = bodyArg.endIdx + 1;
+    }
+    return rebuilt;
+  };
+
+  out = expandBalancedSeqMap(out);
 
   // 4. Expand custom macros (2 passes)
   for (let pass = 0; pass < 2; pass += 1) {
@@ -1122,7 +1227,7 @@ export async function compileWithWebTypesetter(payload: CompilerPayload): Promis
       });
     }
     const widthPt = Math.min(contentWidth, font.widthOfTextAtSize(safe, sizePt));
-    recordSyncBox(line, xPt, cursorYFromTop + sizePt, widthPt, sizePt);
+    recordSyncBox(line, xPt, cursorYFromTop, widthPt, sizePt);
   };
 
   const wrapTextLines = (text: string, font: PDFFont, sizePt: number, maxWidth: number): string[] => {
