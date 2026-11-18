@@ -60,7 +60,10 @@ LaTeXaP-WeB/
 │       ├── state/             # useWorkspaceStore (React context ViewModel)
 │       ├── styles/            # Design tokens, Light/Dark themes, responsive workspace CSS
 │       └── components/        # Auth, Editor (CodeMirror 6), PDFPreview (PDF.js), Sidebar, Academic modals
-└── tests/                     # Vitest unit & Supertest API integration suites
+├── tests/                     # Vitest unit & Supertest API integration suites
+├── Dockerfile                 # Multi-stage production Node 22 Alpine build (non-root runner)
+├── .dockerignore              # Excludes build artifacts, node_modules, local storage, and secrets
+└── docker-compose.yml         # Production Compose service with persistent volume & healthcheck
 ```
 
 ---
@@ -85,7 +88,8 @@ cp .env.example .env
 | `B2_BUCKET_NAME` | *(unset → Local Fallback)* | Backblaze B2 bucket name |
 | `B2_KEY_ID` | *(unset → Local Fallback)* | Backblaze B2 Application Key ID (server-only) |
 | `B2_APPLICATION_KEY` | *(unset → Local Fallback)* | Backblaze B2 Application Key secret (server-only) |
-| `STORAGE_LOCAL_DIR` | `.data/b2-local-storage` | Local directory mirroring `users/<userId>/...` when B2 env vars are absent |
+| `LOCAL_STORAGE_ROOT` | `.local-b2-storage` | Primary local fallback directory when B2 credentials are absent (mounted at `/app/.local-b2-storage` in Docker) |
+| `STORAGE_LOCAL_DIR` | `.data/b2-local-storage` | Legacy/fallback local storage path used if `LOCAL_STORAGE_ROOT` is unset |
 
 ### Enabling Production Google Auth & Backblaze B2
 1. **Google OAuth**: Create a Web Application OAuth Client ID in Google Cloud Console, add your origin (e.g. `http://localhost:5173` or your production URL) to **Authorized JavaScript origins**, and set `GOOGLE_CLIENT_ID` in `.env`.
@@ -116,6 +120,51 @@ npm run build
 # 6. Start production server (serves API + built SPA on PORT)
 npm start
 ```
+
+---
+
+## Docker & Docker Compose Deployment
+
+LaTeXaP-WeB includes a multi-stage `Dockerfile` (`node:22-alpine`, non-root `USER node`, built-in `/api/health` `HEALTHCHECK`) and `docker-compose.yml` with a persistent volume (`latexap_storage:/app/.local-b2-storage`) for local-fallback storage.
+
+### 1. Configure Production Environment
+Because `docker-compose.yml` runs with `NODE_ENV=production` and `ALLOW_DEV_AUTH=false` by default, set a strong `JWT_SECRET` (minimum 16 characters; recommended 32+ bytes) in `.env` or your shell environment:
+
+```bash
+# Generate a strong JWT secret and configure .env
+cp .env.example .env
+# Set JWT_SECRET=$(openssl rand -hex 32)
+# Set GOOGLE_CLIENT_ID=... (or ALLOW_DEV_AUTH=true for local/demo container evaluation)
+# Optionally set B2_ENDPOINT, B2_REGION, B2_BUCKET_NAME, B2_KEY_ID, B2_APPLICATION_KEY
+```
+
+### 2. Run with Docker Compose
+```bash
+# Build and start in detached mode (exposed on http://localhost:4000)
+docker compose up -d --build
+
+# Check container health and logs
+docker compose ps
+docker compose logs -f latexap-web
+
+# Stop containers (preserves latexap_storage volume)
+docker compose down
+```
+
+### 3. Build & Run Standalone Docker Image
+```bash
+docker build -t latexap-web:latest .
+
+docker run -d \
+  --name latexap-web \
+  -p 4000:4000 \
+  -e JWT_SECRET="$(openssl rand -hex 32)" \
+  -e ALLOW_DEV_AUTH=true \
+  -v latexap_storage:/app/.local-b2-storage \
+  latexap-web:latest
+```
+
+Verify readiness anytime at `GET http://localhost:4000/api/health`.
 
 ---
 

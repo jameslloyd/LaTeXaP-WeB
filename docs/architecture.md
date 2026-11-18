@@ -506,7 +506,7 @@ Neither `@developer` nor `@ui-specialist` may create or modify files assigned to
 
 | Owner | Action | Path / Pattern | Responsibility |
 | :--- | :--- | :--- | :--- |
-| **`@developer`** | Create | `package.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `.env.example`, `.gitignore` | Project dependencies (React 19, Express, `jose`, `google-auth-library`, `@aws-sdk/client-s3`, `pdf-lib`, `pdfjs-dist`, `fflate`, CodeMirror 6, `lucide-react`, Vitest), build/dev/test scripts |
+| **`@developer`** | Create | `package.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `.env.example`, `.gitignore`, `Dockerfile`, `.dockerignore`, `docker-compose.yml` | Project dependencies, build/dev/test scripts, multi-stage production Docker image (`node:22-alpine`), and Compose deployment configuration |
 | **`@developer`** | Create | `shared/types/auth.ts`, `shared/types/project.ts`, `shared/types/latex.ts`, `shared/types/academic.ts`, `shared/types/fonts.ts`, `shared/types/api.ts`, `shared/types/index.ts` | Frozen domain models & API DTO contracts shared across server, worker, and UI |
 | **`@developer`** | Create | `server/config.ts`, `server/app.ts`, `server/index.ts` | Express server setup, CORS/Helmet-style security headers, static prod SPA serving, env validation |
 | **`@developer`** | Create | `server/middleware/authMiddleware.ts`, `server/middleware/errorMiddleware.ts` | `requireAuth` cookie JWT middleware, strict tenant scoping, safe error serializer |
@@ -544,3 +544,19 @@ Neither `@developer` nor `@ui-specialist` may create or modify files assigned to
    - **`@ui-specialist`**: Builds the complete React UI (`AuthGateView`, split-pane CodeMirror 6 + `pdfjs-dist` viewer, all sidebar tabs, B2 project & snapshot history modals, Academic Suite modals/popovers, Font Manager) bound strictly to `useWorkspaceStore`.
 3. **Stage 3 (Integration & Verification)**:
    - Run `npm run typecheck`, `npm run build`, `npm test`, and end-to-end verification (multi-user auth isolation, B2 local fallback snapshot/restore, client-side PDF generation + SyncTeX, Academic Suite export).
+
+---
+
+## 12. Containerized Deployment Architecture (Docker & Compose)
+
+LaTeXaP-WeB ships with a multi-stage production container (`Dockerfile`), `.dockerignore`, and `docker-compose.yml`:
+
+- **Multi-Stage `Dockerfile` (`node:22-alpine`)**:
+  - **`builder` stage**: Installs full dependencies (`npm ci`) and runs `npm run build` (`vite build` → `dist-client/` + `tsc -p tsconfig.server.json` → `dist-server/`).
+  - **`runner` stage**: Sets `NODE_ENV=production`, `PORT=4000`, `LOCAL_STORAGE_ROOT=/app/.local-b2-storage`, installs production-only dependencies (`npm ci --omit=dev`), copies `dist-client/` and `dist-server/`, creates `/app/.local-b2-storage` owned by `node:node`, runs as non-root `USER node`, exposes `4000`, and defines a Docker `HEALTHCHECK` polling `GET /api/health`.
+- **`docker-compose.yml`**:
+  - Defines the `latexap-web` service (`${PORT:-4000}:4000`), passes through `JWT_SECRET` (un-defaulted so production fails closed unless explicitly provided), `GOOGLE_CLIENT_ID`, `ALLOW_DEV_AUTH` (defaulting to `false` in production Compose), and Backblaze B2 credentials (`B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET_NAME`, `B2_ENDPOINT`, `B2_REGION`).
+  - Mounts persistent named volume `latexap_storage:/app/.local-b2-storage` for local-fallback mode when B2 credentials are omitted.
+- **Health & Production SPA Serving (`server/app.ts`)**:
+  - `GET /api/health` returns `200 OK` JSON (`{ ok: true, status: "ok", storageDriver, storageMode, devAuthEnabled, timestamp }`).
+  - In `NODE_ENV=production`, Express serves static assets from `dist-client/` and falls back non-`/api/*` routes to `dist-client/index.html`, while unknown `/api/*` routes return JSON `404`.
