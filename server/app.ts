@@ -22,6 +22,7 @@ export interface AppDependencies {
   storageProvider?: StorageProvider;
   googleVerifier?: GoogleTokenVerifier;
   citationFetch?: FetchImpl;
+  clientDistDir?: string;
 }
 
 export function createStorageProvider(config: ServerConfig): StorageProvider {
@@ -71,9 +72,11 @@ export function createApp(deps: AppDependencies = {}): {
   app.use(express.json({ limit: '15mb' }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({
+    res.status(200).json({
       ok: true,
+      status: 'ok',
       storageDriver: storageProvider.driver,
+      storageMode: storageProvider.driver,
       devAuthEnabled: config.devAuthEnabled,
       timestamp: new Date().toISOString(),
     });
@@ -85,17 +88,29 @@ export function createApp(deps: AppDependencies = {}): {
   app.use('/api/citations', requireAuth, createCitationRouter(citationService));
 
   // Serve built client assets in production
-  const clientDistDir = path.resolve(process.cwd(), 'dist-client');
+  const clientDistDir = deps.clientDistDir ?? path.resolve(process.cwd(), 'dist-client');
+  const clientIndexPath = path.join(clientDistDir, 'index.html');
   if (config.isProduction && fs.existsSync(clientDistDir)) {
     app.use(express.static(clientDistDir));
     app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api/')) {
+      if (req.path === '/api' || req.path.startsWith('/api/')) {
         next();
         return;
       }
-      res.sendFile(path.join(clientDistDir, 'index.html'));
+      if (!fs.existsSync(clientIndexPath)) {
+        next();
+        return;
+      }
+      res.sendFile(clientIndexPath);
     });
   }
+
+  app.use('/api', (_req, res) => {
+    res.status(404).json({
+      error: 'API route not found',
+      code: 'NOT_FOUND',
+    });
+  });
 
   app.use(errorMiddleware);
 

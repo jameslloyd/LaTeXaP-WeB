@@ -1,0 +1,14 @@
+node_modules
+dist-client
+dist-server
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.local-b2-storage
+.data
+swarm-board.log
+coverage
+*.log
+.DS_Store

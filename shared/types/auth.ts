@@ -18,7 +18,9 @@ export interface AuthUser {
 
 export interface HealthResponse {
   ok: boolean;
+  status: 'ok';
   storageDriver: StorageDriver;
+  storageMode: StorageDriver;
   devAuthEnabled: boolean;
   timestamp: string;
 }

@@ -1,0 +1,40 @@
+services:
+  latexap-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: latexap-web
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      # Required in production (min 16 chars). Set in .env or host environment, e.g.:
+      #   JWT_SECRET=$(openssl rand -hex 32)
+      JWT_SECRET: ${JWT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      ALLOW_DEV_AUTH: ${ALLOW_DEV_AUTH:-false}
+      B2_KEY_ID: ${B2_KEY_ID:-}
+      B2_APPLICATION_KEY: ${B2_APPLICATION_KEY:-}
+      B2_BUCKET_NAME: ${B2_BUCKET_NAME:-}
+      B2_ENDPOINT: ${B2_ENDPOINT:-}
+      B2_REGION: ${B2_REGION:-us-west-004}
+      LOCAL_STORAGE_ROOT: /app/.local-b2-storage
+    volumes:
+      - latexap_storage:/app/.local-b2-storage
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  latexap_storage:

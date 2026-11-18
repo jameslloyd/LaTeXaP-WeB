@@ -69,7 +69,9 @@ export function loadConfig(): ServerConfig {
 
   const storageLocalDir = path.resolve(
     process.cwd(),
-    process.env.STORAGE_LOCAL_DIR?.trim() || '.data/b2-local-storage'
+    process.env.LOCAL_STORAGE_ROOT?.trim() ||
+      process.env.STORAGE_LOCAL_DIR?.trim() ||
+      '.data/b2-local-storage'
   );
 
   return {
