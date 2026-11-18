@@ -63,6 +63,8 @@ export const B2ProjectManagerModal: React.FC<B2ProjectManagerModalProps> = ({
 
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,12 +85,38 @@ export const B2ProjectManagerModal: React.FC<B2ProjectManagerModalProps> = ({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        if (pendingSwitchSlug) {
+          setPendingSwitchSlug(null);
+        } else if (pendingDelete) {
+          setPendingDelete(null);
+        } else if (renamingSlug) {
+          setRenamingSlug(null);
+        } else {
+          onClose();
+        }
+        return;
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusables = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, pendingDelete, pendingSwitchSlug, renamingSlug]);
 
   if (!open) return null;
 
@@ -154,6 +182,7 @@ export const B2ProjectManagerModal: React.FC<B2ProjectManagerModalProps> = ({
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="b2-modal-title"
@@ -190,34 +219,44 @@ export const B2ProjectManagerModal: React.FC<B2ProjectManagerModalProps> = ({
             background: 'var(--bg-surface-subtle)',
           }}
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'projects'}
-            className={`btn btn-sm ${tab === 'projects' ? 'btn-primary' : ''}`}
-            onClick={() => setTab('projects')}
-          >
-            My Projects ({projects.length})
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'create'}
-            className={`btn btn-sm ${tab === 'create' ? 'btn-primary' : ''}`}
-            onClick={() => setTab('create')}
-          >
-            <FolderPlus size={12} aria-hidden="true" />
-            New Project
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'storage'}
-            className={`btn btn-sm ${tab === 'storage' ? 'btn-primary' : ''}`}
-            onClick={() => setTab('storage')}
-          >
-            B2 Connection &amp; Status
-          </button>
+          {(
+            [
+              { id: 'projects', label: `My Projects (${projects.length})` },
+              { id: 'create', label: 'New Project' },
+              { id: 'storage', label: 'B2 Connection & Status' },
+            ] as const
+          ).map((t, idx, arr) => {
+            const selected = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                ref={(el) => {
+                  tabRefs.current[idx] = el;
+                }}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
+                className={`btn btn-sm ${selected ? 'btn-primary' : ''}`}
+                onClick={() => setTab(t.id)}
+                onKeyDown={(e) => {
+                  let nextIdx: number | null = null;
+                  if (e.key === 'ArrowRight') nextIdx = (idx + 1) % arr.length;
+                  else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + arr.length) % arr.length;
+                  else if (e.key === 'Home') nextIdx = 0;
+                  else if (e.key === 'End') nextIdx = arr.length - 1;
+                  if (nextIdx !== null) {
+                    e.preventDefault();
+                    setTab(arr[nextIdx].id);
+                    tabRefs.current[nextIdx]?.focus();
+                  }
+                }}
+              >
+                {t.id === 'create' && <FolderPlus size={12} aria-hidden="true" />}
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="modal-body">

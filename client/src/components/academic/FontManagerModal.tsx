@@ -32,6 +32,7 @@ export const FontManagerModal: React.FC<FontManagerModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -46,12 +47,34 @@ export const FontManagerModal: React.FC<FontManagerModalProps> = ({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        if (renamingId) {
+          setRenamingId(null);
+        } else {
+          onClose();
+        }
+        return;
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusables = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, renamingId]);
 
   // Register selected font in browser FontFace API for live specimen preview
   const selectedFont = customFonts.find((f) => f.id === selectedId) ?? customFonts[0] ?? null;
@@ -90,6 +113,7 @@ export const FontManagerModal: React.FC<FontManagerModalProps> = ({
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="font-manager-title"

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   BookOpen,
   Braces,
@@ -58,6 +58,7 @@ export interface SidebarPanelProps {
   studentModeHideExpl3: boolean;
   onSelectTab: (tab: SidebarTabId) => void;
   onSwitchProject: (slug: string) => Promise<void>;
+  onSaveAndSwitchProject: (slug: string) => Promise<void>;
   onOpenNewProject: () => void;
   onOpenStorageModal: () => void;
   onOpenHistoryModal: () => void;
@@ -95,6 +96,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
   studentModeHideExpl3,
   onSelectTab,
   onSwitchProject,
+  onSaveAndSwitchProject,
   onOpenNewProject,
   onOpenStorageModal,
   onOpenHistoryModal,
@@ -114,6 +116,8 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
   onOpenWizard,
 }) => {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [pendingSwitchSlug, setPendingSwitchSlug] = useState<string | null>(null);
+  const [switchingBusy, setSwitchingBusy] = useState(false);
 
   const handleTabKeyDown = (idx: number, e: React.KeyboardEvent) => {
     let nextIdx: number | null = null;
@@ -166,9 +170,15 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           <select
             id="sidebar-project-switcher"
             className="select"
-            value={activeProject?.slug ?? ''}
+            value={pendingSwitchSlug ?? activeProject?.slug ?? ''}
             onChange={(e) => {
-              if (e.target.value) void onSwitchProject(e.target.value);
+              const target = e.target.value;
+              if (!target || target === activeProject?.slug) return;
+              if (isDirty) {
+                setPendingSwitchSlug(target);
+              } else {
+                void onSwitchProject(target);
+              }
             }}
           >
             {projects.map((p) => (
@@ -178,6 +188,71 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
             ))}
           </select>
         </div>
+
+        {pendingSwitchSlug && (
+          <div
+            role="alertdialog"
+            aria-label="Unsaved changes before switching project"
+            className="studio-card"
+            style={{
+              marginTop: 0,
+              padding: 8,
+              borderColor: 'var(--warning-border)',
+              background: 'var(--warning-bg)',
+              color: 'var(--warning-text)',
+            }}
+          >
+            <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 6 }}>
+              Save changes to &ldquo;{activeProject?.displayName}&rdquo; before switching?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={switchingBusy}
+                onClick={async () => {
+                  setSwitchingBusy(true);
+                  try {
+                    await onSaveAndSwitchProject(pendingSwitchSlug);
+                    setPendingSwitchSlug(null);
+                  } finally {
+                    setSwitchingBusy(false);
+                  }
+                }}
+              >
+                Save &amp; Switch
+              </button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  style={{ flex: 1 }}
+                  disabled={switchingBusy}
+                  onClick={async () => {
+                    setSwitchingBusy(true);
+                    try {
+                      await onSwitchProject(pendingSwitchSlug);
+                      setPendingSwitchSlug(null);
+                    } finally {
+                      setSwitchingBusy(false);
+                    }
+                  }}
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ flex: 1 }}
+                  disabled={switchingBusy}
+                  onClick={() => setPendingSwitchSlug(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="sidebar-workspace-strip__row">
           <button type="button" className="btn btn-sm" style={{ flex: 1 }} onClick={onOpenNewProject}>

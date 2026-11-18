@@ -26,6 +26,7 @@ export const ProjectHistoryModal: React.FC<ProjectHistoryModalProps> = ({
   const [restoring, setRestoring] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -48,8 +49,8 @@ export const ProjectHistoryModal: React.FC<ProjectHistoryModalProps> = ({
         if (!cancelled) {
           setDetail(res);
           const keys = Object.keys(res.files);
-          if (keys.length > 0 && !res.files[selectedFile]) {
-            setSelectedFile(keys[0]);
+          if (keys.length > 0) {
+            setSelectedFile((prev) => (res.files[prev] ? prev : keys[0]));
           }
         }
       })
@@ -59,25 +60,48 @@ export const ProjectHistoryModal: React.FC<ProjectHistoryModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open, selectedId, onPreviewSnapshot, selectedFile]);
+  }, [open, selectedId, onPreviewSnapshot]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        if (confirmRestore) {
+          setConfirmRestore(false);
+        } else {
+          onClose();
+        }
+        return;
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusables = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [confirmRestore, open, onClose]);
 
   if (!open) return null;
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="history-modal-title"

@@ -107,7 +107,8 @@ export const BibliographyTab: React.FC<BibliographyTabProps> = ({
   }, [bibEntries, filterInput]);
 
   const isKeyCited = (key: string) => {
-    const re = new RegExp(`\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*\\b${key}\\b`);
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*\\b${escaped}\\b`);
     return re.test(sourceText);
   };
 

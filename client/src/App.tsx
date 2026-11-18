@@ -99,6 +99,38 @@ function StudioWorkspace(): React.ReactElement {
     setLiveAnnouncement('Saved project to Backblaze B2');
   }, [store]);
 
+  const openHistoryModal = useCallback(() => {
+    captureFocusTrigger();
+    setHistoryModalOpen(true);
+    void store.loadSnapshots();
+  }, [store]);
+
+  const handleGoogleReauth = useCallback(() => {
+    const clientId = store.authConfig?.googleClientId;
+    if (!clientId) return;
+    const triggerPrompt = () => {
+      window.google?.accounts?.id?.initialize({
+        client_id: clientId,
+        callback: (response) => {
+          if (response.credential) {
+            void store.loginWithGoogleToken(response.credential);
+          }
+        },
+      });
+      window.google?.accounts?.id?.prompt();
+    };
+    if (window.google?.accounts?.id) {
+      triggerPrompt();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = triggerPrompt;
+    document.head.appendChild(script);
+  }, [store]);
+
   // Global Keyboard Shortcuts (docs/ux-spec.md §5.2)
   useEffect(() => {
     if (!store.currentUser) return;
@@ -115,8 +147,7 @@ function StudioWorkspace(): React.ReactElement {
         void handleQuickSave();
       } else if (key === 'h' && e.altKey) {
         e.preventDefault();
-        captureFocusTrigger();
-        setHistoryModalOpen(true);
+        openHistoryModal();
       } else if (key === 'b' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         void store.compileNow();
@@ -140,7 +171,7 @@ function StudioWorkspace(): React.ReactElement {
       } else if (e.key === '\\' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         setSidebarOpen((prev) => !prev);
-      } else if (key === ';' && e.altKey) {
+      } else if ((key === ';' || e.code === 'Semicolon') && e.altKey) {
         e.preventDefault();
         store.toggleProseSpellCheck(!store.proseSpellCheckEnabled);
       } else if (key === 'e' && e.shiftKey && e.altKey) {
@@ -154,7 +185,7 @@ function StudioWorkspace(): React.ReactElement {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleQuickSave, store]);
+  }, [handleQuickSave, openHistoryModal, store]);
 
   // Splitter Drag Handlers
   const startSidebarResize = (e: React.MouseEvent) => {
@@ -257,13 +288,22 @@ function StudioWorkspace(): React.ReactElement {
             <span>{store.authError}</span>
           </div>
           <div className="studio-banner__actions">
+            {store.authConfig?.googleClientId && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleGoogleReauth}
+              >
+                Re-authenticate with Google
+              </button>
+            )}
             {store.authConfig?.devAuthEnabled && (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
                 onClick={() => void store.loginWithDevPersona(store.currentUser!.email, store.currentUser!.name)}
               >
-                Re-authenticate Session
+                Re-authenticate Dev Session
               </button>
             )}
           </div>
@@ -394,6 +434,10 @@ function StudioWorkspace(): React.ReactElement {
               studentModeHideExpl3={store.rubricTargets.studentModeHideExpl3}
               onSelectTab={setSidebarTab}
               onSwitchProject={store.switchProject}
+              onSaveAndSwitchProject={async (slug) => {
+                await store.saveProject();
+                await store.switchProject(slug);
+              }}
               onOpenNewProject={() => {
                 captureFocusTrigger();
                 setProjectsModalState({ open: true, mode: 'create' });
@@ -402,10 +446,7 @@ function StudioWorkspace(): React.ReactElement {
                 captureFocusTrigger();
                 setProjectsModalState({ open: true, mode: 'storage' });
               }}
-              onOpenHistoryModal={() => {
-                captureFocusTrigger();
-                setHistoryModalOpen(true);
-              }}
+              onOpenHistoryModal={openHistoryModal}
               onSelectOutlineItem={(line) => {
                 store.jumpToSourceLine(line);
                 store.triggerForwardSync(line);
@@ -565,10 +606,7 @@ function StudioWorkspace(): React.ReactElement {
           setDrawerOpen(true);
           setDrawerTab('preflight');
         }}
-        onOpenHistory={() => {
-          captureFocusTrigger();
-          setHistoryModalOpen(true);
-        }}
+        onOpenHistory={openHistoryModal}
         onUpdateRubricTargets={store.updateRubricTargets}
       />
 

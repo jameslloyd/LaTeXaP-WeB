@@ -149,6 +149,7 @@ export const PDFPreviewPane: React.FC<PDFPreviewPaneProps> = ({
     if (!doc || pagesMeta.length === 0) return;
 
     let cancelled = false;
+    const activeTasks: pdfjsLib.RenderTask[] = [];
     const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2.5) : 1;
 
     (async () => {
@@ -170,15 +171,32 @@ export const PDFPreviewPane: React.FC<PDFPreviewPaneProps> = ({
         const ctx = canvas.getContext('2d');
         if (!ctx) continue;
 
-        await page.render({
+        const task = page.render({
           canvasContext: ctx,
           viewport: renderViewport,
-        }).promise;
+        });
+        activeTasks.push(task);
+        try {
+          await task.promise;
+        } catch (err) {
+          if (
+            err &&
+            typeof err === 'object' &&
+            'name' in err &&
+            (err as { name: string }).name === 'RenderingCancelledException'
+          ) {
+            return;
+          }
+          throw err;
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      for (const task of activeTasks) {
+        task.cancel();
+      }
     };
   }, [pagesMeta, effectiveScale]);
 
@@ -235,7 +253,7 @@ export const PDFPreviewPane: React.FC<PDFPreviewPaneProps> = ({
   };
 
   const handlePageClick = (pageNumber: number, e: React.MouseEvent<HTMLDivElement>) => {
-    if (!(e.metaKey || e.ctrlKey) && e.detail < 2) return;
+    if (!(e.metaKey || e.ctrlKey)) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const xPt = (e.clientX - rect.left) / effectiveScale;
     const yTopPt = (e.clientY - rect.top) / effectiveScale;

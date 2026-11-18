@@ -43,6 +43,8 @@ export const VisualToolsModal: React.FC<VisualToolsModalProps> = ({
 }) => {
   const [tab, setTab] = useState<'math' | 'matrix' | 'table' | 'chart'>(initialTab);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Matrix state
   const [matRows, setMatRows] = useState(2);
@@ -90,6 +92,24 @@ export const VisualToolsModal: React.FC<VisualToolsModalProps> = ({
       if (e.key === 'Escape') {
         e.stopPropagation();
         onClose();
+        return;
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusables = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -154,6 +174,7 @@ export const VisualToolsModal: React.FC<VisualToolsModalProps> = ({
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="visual-tools-title"
@@ -186,46 +207,46 @@ export const VisualToolsModal: React.FC<VisualToolsModalProps> = ({
             background: 'var(--bg-surface-subtle)',
           }}
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'math'}
-            className={`btn btn-sm ${tab === 'math' ? 'btn-primary' : ''}`}
-            onClick={() => setTab('math')}
-          >
-            <Sigma size={12} aria-hidden="true" />
-            Math Palette
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'matrix'}
-            className={`btn btn-sm ${tab === 'matrix' ? 'btn-primary' : ''}`}
-            onClick={() => setTab('matrix')}
-          >
-            <Grid size={12} aria-hidden="true" />
-            Matrix Builder
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'table'}
-            className={`btn btn-sm ${tab === 'table' ? 'btn-primary' : ''}`}
-            onClick={() => setTab('table')}
-          >
-            <Table size={12} aria-hidden="true" />
-            Booktabs Table
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'chart'}
-            className={`btn btn-sm ${tab === 'chart' ? 'btn-primary' : ''}`}
-            onClick={() => setTab('chart')}
-          >
-            <BarChart3 size={12} aria-hidden="true" />
-            PGFPlots Chart
-          </button>
+          {(
+            [
+              { id: 'math', label: 'Math Palette', icon: Sigma },
+              { id: 'matrix', label: 'Matrix Builder', icon: Grid },
+              { id: 'table', label: 'Booktabs Table', icon: Table },
+              { id: 'chart', label: 'PGFPlots Chart', icon: BarChart3 },
+            ] as const
+          ).map((t, idx, arr) => {
+            const Icon = t.icon;
+            const selected = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                ref={(el) => {
+                  tabRefs.current[idx] = el;
+                }}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
+                className={`btn btn-sm ${selected ? 'btn-primary' : ''}`}
+                onClick={() => setTab(t.id)}
+                onKeyDown={(e) => {
+                  let nextIdx: number | null = null;
+                  if (e.key === 'ArrowRight') nextIdx = (idx + 1) % arr.length;
+                  else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + arr.length) % arr.length;
+                  else if (e.key === 'Home') nextIdx = 0;
+                  else if (e.key === 'End') nextIdx = arr.length - 1;
+                  if (nextIdx !== null) {
+                    e.preventDefault();
+                    setTab(arr[nextIdx].id);
+                    tabRefs.current[nextIdx]?.focus();
+                  }
+                }}
+              >
+                <Icon size={12} aria-hidden="true" />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="modal-body">

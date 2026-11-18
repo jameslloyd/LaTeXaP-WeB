@@ -52,7 +52,8 @@ export const PackagesTab: React.FC<PackagesTabProps> = ({
   }, [query, studentModeHideExpl3]);
 
   const isPackageAdded = (pkgName: string) => {
-    const re = new RegExp(`\\\\usepackage(?:\\[[^\\]]*\\])?\\{[^}]*\\b${pkgName}\\b[^}]*\\}`);
+    const escaped = pkgName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\\\usepackage(?:\\[[^\\]]*\\])?\\{[^}]*\\b${escaped}\\b[^}]*\\}`);
     return re.test(sourceText);
   };
 
