@@ -82,10 +82,11 @@ export const UserMenuPopover: React.FC<UserMenuPopoverProps> = ({
         onClick={() => setOpen((prev) => !prev)}
         style={{ padding: '0 8px 0 4px', gap: 6 }}
       >
-        {user.picture ? (
+        {user.picture && user.picture.startsWith('https://') ? (
           <img
             src={user.picture}
             alt=""
+            referrerPolicy="no-referrer"
             width={20}
             height={20}
             style={{ borderRadius: '50%', objectFit: 'cover' }}

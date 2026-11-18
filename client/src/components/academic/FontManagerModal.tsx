@@ -60,7 +60,7 @@ export const FontManagerModal: React.FC<FontManagerModalProps> = ({
     if (!open || !selectedFont || loadedFamilies[selectedFont.id]) return;
     if (typeof FontFace === 'undefined') return;
     const familyAlias = `LaTeXaPPreview_${selectedFont.id.replace(/[^a-zA-Z0-9]/g, '')}`;
-    const ff = new FontFace(familyAlias, `url(/api/fonts/${selectedFont.id}/binary)`);
+    const ff = new FontFace(familyAlias, `url(/api/fonts/${encodeURIComponent(selectedFont.id)}/binary)`);
     ff.load()
       .then((loaded) => {
         document.fonts.add(loaded);
